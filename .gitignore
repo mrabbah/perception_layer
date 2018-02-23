@@ -99,3 +99,5 @@ ENV/
 
 # mypy
 .mypy_cache/
+boat_navigation_01.mp4
+data/

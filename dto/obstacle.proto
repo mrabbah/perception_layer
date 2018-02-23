@@ -1,0 +1,15 @@
+syntax = "proto2";
+
+package org.copdai;
+
+message CameraObstacle {
+  required double xmin = 1;
+  required double ymin = 2;
+  required double xmax = 3;
+  required double ymax = 4;
+  required double depth = 5;
+  required double confidence = 6;
+  optional string classification = 7;
+  required double time = 8;
+}
+

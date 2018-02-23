@@ -11,6 +11,8 @@ from multiprocessing import Queue, Pool
 from object_detection.utils import label_map_util
 from object_detection.utils import visualization_utils as vis_util
 
+from dto import obstacle_pb2
+
 CWD_PATH = os.getcwd()
 
 # Path to frozen detection graph. This is the actual model that is used for the object detection.
@@ -28,6 +30,35 @@ categories = label_map_util.convert_label_map_to_categories(label_map, max_num_c
                                                             use_display_name=True)
 category_index = label_map_util.create_category_index(categories)
 
+def encode_obstacle(ymin, xmin, ymax, xmax, class_name, score):
+    obstacle = obstacle_pb2.CameraObstacle()
+    obstacle.xmin = xmin
+    obstacle.ymin = ymin
+    obstacle.xmax = xmax
+    obstacle.ymax = ymax
+    obstacle.depth = 0.0
+    obstacle.confidence = score
+    obstacle.classification = class_name
+    obstacle.time = time.time()
+    f = open('data/obstacles.raw', "ab")
+    f.write(obstacle.SerializeToString())
+    f.close()
+     
+
+def print_coordinate(image, boxes, classes, scores, category_index):
+    for i in range(boxes.shape[0]):
+        box = tuple(boxes[i].tolist())
+        ymin, xmin, ymax, xmax = box
+        class_name = 'N/A'
+        if scores is not None:
+            if classes[i] in category_index.keys():
+                class_name = category_index[classes[i]]['name']
+
+                
+        print("%f %f %f %f %s %f" % (ymin, xmin, ymax, xmax, str(class_name), scores[i]))
+
+        encode_obstacle(ymin, xmin, ymax, xmax, str(class_name), scores[i])
+
 
 def detect_objects(image_np, sess, detection_graph):
     # Expand dimensions since the model expects images to have shape: [1, None, None, 3]
@@ -36,7 +67,7 @@ def detect_objects(image_np, sess, detection_graph):
 
     # Each box represents a part of the image where a particular object was detected.
     boxes = detection_graph.get_tensor_by_name('detection_boxes:0')
-
+    
     # Each score represent how level of confidence for each of the objects.
     # Score is shown on the result image, together with the class label.
     scores = detection_graph.get_tensor_by_name('detection_scores:0')
@@ -47,7 +78,11 @@ def detect_objects(image_np, sess, detection_graph):
     (boxes, scores, classes, num_detections) = sess.run(
         [boxes, scores, classes, num_detections],
         feed_dict={image_tensor: image_np_expanded})
-
+    print_coordinate(image_np,
+        np.squeeze(boxes),
+        np.squeeze(classes).astype(np.int32),
+        np.squeeze(scores),
+        category_index)
     # Visualization of the results of a detection.
     vis_util.visualize_boxes_and_labels_on_image_array(
         image_np,
@@ -85,7 +120,10 @@ def worker(input_q, output_q):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('-src', '--source', dest='video_source', type=int,
+    #in case you want work with webcam
+    #parser.add_argument('-src', '--source', dest='video_source', type=int,
+    #                    default=0, help='Device index of the camera.')
+    parser.add_argument('-src', '--source', dest='video_source', type=str,
                         default=0, help='Device index of the camera.')
     parser.add_argument('-wd', '--width', dest='width', type=int,
                         default=480, help='Width of the frames in the video stream.')
@@ -104,19 +142,24 @@ if __name__ == '__main__':
     output_q = Queue(maxsize=args.queue_size)
     pool = Pool(args.num_workers, worker, (input_q, output_q))
 
-    video_capture = WebcamVideoStream(src=args.video_source,
-                                      width=args.width,
-                                      height=args.height).start()
+    video_capture = cv2.VideoCapture(args.video_source) #WebcamVideoStream(src=args.video_source, width=args.width, height=args.height).start()
     fps = FPS().start()
 
     while True:  # fps._numFrames < 120
-        frame = video_capture.read()
+        # in case you use your webcam
+        # frame = video_capture.read()
+        _, frame = video_capture.read()
         input_q.put(frame)
 
         t = time.time()
 
         output_rgb = cv2.cvtColor(output_q.get(), cv2.COLOR_RGB2BGR)
+
+        cv2.namedWindow('Video',cv2.WINDOW_NORMAL)
+        cv2.resizeWindow('Video', args.width,args.height)
         cv2.imshow('Video', output_rgb)
+        
+
         fps.update()
 
         print('[INFO] elapsed time: {:.2f}'.format(time.time() - t))
